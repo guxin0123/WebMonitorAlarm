@@ -2,7 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,10 +23,13 @@ namespace WebMonitorAlarm
         {
             InitializeComponent();
             timeUnit.SelectedIndex = 0;
-            client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
-           
+            client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(5)
+            };
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36");
 
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             timer = new System.Windows.Forms.Timer();
             appConfig = AppConfig.GetVal();
@@ -54,8 +60,12 @@ namespace WebMonitorAlarm
         /// <returns>返回获取的Html页面</returns>
         public virtual async Task<HttpResponseMessage> GetAsync(string url)
         {
+            if (string.IsNullOrEmpty(url))
+            {
+                return null;
+            }
+
             HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, url);
-            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36");
             return await client.SendAsync(httpRequestMessage);
         }
         #endregion
@@ -102,7 +112,7 @@ namespace WebMonitorAlarm
                     break;
             }
             timer.Interval = numicVla;
-            Timer_Tick(null, null);
+            Try_Test_Site();
 
             timer.Start();
             buttonStart.Text = "停止";
@@ -119,7 +129,12 @@ namespace WebMonitorAlarm
             buttonStart.Text = "开始";
         }
 
-        private async void Timer_Tick(object sender, EventArgs e)
+        private void Timer_Tick(object sender, EventArgs e)
+        {
+            Try_Test_Site();
+        }
+
+        private async void Try_Test_Site()
         {
 
             string[] urls = textBoxUrls.Text.Split(new string[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -143,7 +158,16 @@ namespace WebMonitorAlarm
                 }
                 catch (Exception ex)
                 {
-                    DoWork(url, false, ex.Message);
+                    try
+                    {
+                        DoWork(url, false, ex.Message);
+                    }
+                    catch (Exception ex2)
+                    {
+                        Console.WriteLine("Send Message ---- ERROR" + ":" + ex2.Message);
+
+                    }
+
                     //AppendNewLine(url + "---- ERROR:" + ex.Message);
 
                 }
@@ -153,12 +177,12 @@ namespace WebMonitorAlarm
         }
 
 
-
-
         Dictionary<string, bool> siteStatus = new Dictionary<string, bool>();
-        private async void DoWork(string url, bool isOk, string msg)
+#pragma warning disable CS1998 // 异步方法缺少 "await" 运算符，将以同步方式运行
+        private async void DoWork(string url, bool isOk, string msgStr)
+
         {
-            Console.WriteLine(url + "---- " + (isOk ? "OK" : "ERROR") + ":" + msg);
+            Console.WriteLine(url + "---- " + (isOk ? "OK" : "ERROR") + ":" + msgStr);
 
             if (!siteStatus.ContainsKey(url))
             {
@@ -168,20 +192,25 @@ namespace WebMonitorAlarm
             if (siteStatus[url] != isOk)
             {
                 siteStatus[url] = isOk;
-                string messagetitle = isOk ? "站点恢复访问" : "站点无法访问";
-                string messagecontent = messagetitle + "\r\n\r\n地址 " + url + "\r\n\r\n" + (isOk ? "" : msg);
-                string sendUrl = "https://sctapi.ftqq.com/" + appConfig.SendKey + ".send?title=" + messagetitle + "&desp=" + messagecontent;
+                string title = isOk ? "站点恢复访问" : "站点无法访问";
+                string msg = title + "\r\n\r\n地址 " + url + "\r\n\r\n" + (isOk ? "" : msgStr);
+                //string sendUrl = "https://sctapi.ftqq.com/" + appConfig.SendUrl + ".send?title=" + title + "&desp=" + msg;
+                string sendUrl = string.Format(appConfig.SendUrl, title, msg); ;
+                //Console.WriteLine("send_url :" + send_url);
+
+                //HttpResponseMessage res = await GetAsync(sendUrl);
 #if !DEBUG
                 HttpResponseMessage res = await GetAsync(sendUrl);
-                Console.WriteLine("发送通知 :" + messagetitle);
+                Console.WriteLine("发送通知 :" + title);
 #else
                 Console.WriteLine("DEBUG : 不发送通知");
+                Console.WriteLine("DEBUG : " + sendUrl);
 #endif
 
             }
 
         }
-
+#pragma warning restore CS1998 // 异步方法缺少 "await" 运算符，将以同步方式运行
         private void cbx_startup()
         {
             // 要设置软件名称，有唯一性要求，最好起特别一些
@@ -222,7 +251,7 @@ namespace WebMonitorAlarm
                 }
                 catch (Exception ee)
                 {
-                    Console.WriteLine("开机自启动设置失败");
+                    Console.WriteLine("开机自启动设置失败 -- " + ee.Message);
 
                 }
             }
@@ -230,7 +259,7 @@ namespace WebMonitorAlarm
             {
                 // 取消开机自启动
                 Console.WriteLine("取消开机自启动");
-                string path = Application.ExecutablePath;
+
                 RegistryKey rk = Registry.CurrentUser;
                 try
                 {
@@ -248,7 +277,7 @@ namespace WebMonitorAlarm
                 catch (Exception ee)
                 {
                     //MessageBox.Show(ee.Message.ToString(), "提 示", MessageBoxButtons.OK, MessageBoxIcon.Error);  // 提示
-                    Console.WriteLine("取消开机自启动失败");
+                    Console.WriteLine("取消开机自启动失败 -- " + ee.Message);
                 }
             }
         }
@@ -260,6 +289,117 @@ namespace WebMonitorAlarm
             appConfig.AutoStart = checkBoxAutoStart.Checked ? "1" : "0";
             AppConfig.SetVal(appConfig);
         }
+
+        #region fields(菜单栏)
+        private const int WM_SYSCOMMAND = 0X112;
+        private const int MF_STRING = 0X0;
+        private enum SystemMenuItem : int
+        {
+            Version,
+            Setting,
+        }
+        #endregion
+
+        #region GetSystemMenu 获取系统菜单
+        /// <summary>
+        /// 获取系统菜单
+        /// </summary>
+        /// <param name="hWnd"></param>
+        /// <param name="bRevert"></param>
+        /// <returns></returns>
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
+        #endregion
+
+        #region AppendMenu 追加菜单项
+        /// <summary>
+        /// 追加菜单项
+        /// </summary>
+        /// <param name="hMenu">菜单指针</param>
+        /// <param name="uFlags"></param>
+        /// <param name="uIDNewItem"></param>
+        /// <param name="lpNewItem"></param>
+        /// <returns></returns>
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool AppendMenu(IntPtr hMenu, int uFlags, int uIDNewItem, string lpNewItem);
+        #endregion
+
+        #region InsertMenu
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="hMenu"></param>
+        /// <param name="uPosition"></param>
+        /// <param name="uFlags"></param>
+        /// <param name="uIDNewItem"></param>
+        /// <param name="lpNewItem"></param>
+        /// <returns></returns>
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern bool InsertMenu(IntPtr hMenu, int uPosition, int uFlags, int uIDNewItem, string lpNewItem);
+        #endregion
+
+        #region OnHandleCreated 创建控件
+        /// <summary>
+        /// 创建控件
+        /// </summary>
+        /// <param name="e"></param>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            var hSysMenu = GetSystemMenu(this.Handle, false);
+            //加分割线
+            //AppendMenu(hSysMenu, MF_SEPARATOR, 0, String.Empty);
+
+            //加菜单项
+            InsertMenu(hSysMenu, 0, MF_STRING, (int)SystemMenuItem.Version, "版本信息");
+
+            InsertMenu(hSysMenu, 0, MF_STRING, (int)SystemMenuItem.Setting, "配置");
+            //加分割线
+            //AppendMenu(hSysMenu, MF_SEPARATOR, 0, String.Empty);
+
+            //加菜单项
+            //AppendMenu(hSysMenu, MF_STRING, (int)SystemMenuItem.Setting, "配置");
+        }
+        #endregion
+
+        #region WndProc 处理 Windows 消息
+        /// <summary>
+        /// 处理 Windows 消息
+        /// </summary>
+        /// <param name="e"></param>
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+
+            if (m.Msg == WM_SYSCOMMAND)
+            {
+                switch ((SystemMenuItem)m.WParam)
+                {
+                    case SystemMenuItem.Version:
+                        Assembly thisAssem = typeof(MainForm).Assembly;
+                        AssemblyName thisAssemName = thisAssem.GetName();
+                        Version ver = thisAssemName.Version;
+                        MessageBox.Show($"This is version {ver} of {thisAssemName.Name}.", "Version", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        break;
+                    case SystemMenuItem.Setting:
+                        if (new ConfigKey().ShowDialog() == DialogResult.OK)
+                        {
+                            appConfig.SendUrl = AppConfig.GetVal().SendUrl;
+                        }
+                        // DialogHelper.ShowConfirm("你好呀=^_^= ");
+                        //MessageBox.Show("","",MessageBoxButtons.OKCancel,MessageBoxIcon.Question,MessageBoxDefaultButton.Button1,MessageBoxOptions.DefaultDesktopOnly)
+                        //Microsoft.VisualBasic.Interaction.InputBox("Question?", "Title", "Default Text");
+
+                        break;
+                }
+            }
+        }
+        #endregion
+
+
+
+
+
     }
     public class ConsoleHelper : TextWriter
     {
@@ -275,7 +415,7 @@ namespace WebMonitorAlarm
             Console.SetOut(this);
             try
             {
-                ostrm = new FileStream("./" + (DateTime.Now.ToString("yyyyMMdd")) + ".log", FileMode.Append, FileAccess.Write);
+                ostrm = new FileStream(AppDomain.CurrentDomain.BaseDirectory + (DateTime.Now.ToString("yyyyMMdd")) + ".log", FileMode.Append, FileAccess.Write);
                 streamWriter = new StreamWriter(ostrm);
             }
             catch (Exception e)
@@ -317,7 +457,7 @@ namespace WebMonitorAlarm
         public override void WriteLine(string value)
         {
             string dateStr = "[" + DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "] ";
-            streamWriter.WriteLine(dateStr+value);
+            streamWriter.WriteLine(dateStr + value);
             streamWriter.Flush();
 
             if (_textBox.IsHandleCreated)
@@ -343,5 +483,10 @@ namespace WebMonitorAlarm
         {
             get { return Encoding.UTF8; }
         }
+
+
+
+
+
     }
 }

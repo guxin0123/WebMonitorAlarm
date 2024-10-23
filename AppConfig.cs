@@ -12,7 +12,7 @@ namespace WebMonitorAlarm
         public string Urls { get; set; }
         public string TimeNum { get; set; }
         public string TimeUnit { get; set; }
-        public string SendKey { get; set; }
+        public string SendUrl { get; set; }
         public string Status { get; set; }
         public string AutoStart { get; set; }
         public AppConfig()
@@ -20,7 +20,7 @@ namespace WebMonitorAlarm
             Urls = "http://192.168.0.1";
             TimeNum = "30";
             TimeUnit = "秒";
-            SendKey = "123456789";
+            SendUrl = "123456789";
             Status = "0";
             AutoStart = "0";
 
@@ -34,7 +34,7 @@ namespace WebMonitorAlarm
                 appConfig.Urls = RegistryHelper.GetKeyValue("Urls");
                 appConfig.TimeNum = RegistryHelper.GetKeyValue("TimeNum");
                 appConfig.TimeUnit = RegistryHelper.GetKeyValue("TimeUnit");
-                appConfig.SendKey = RegistryHelper.GetKeyValue("SendKey");
+                appConfig.SendUrl = RegistryHelper.GetKeyValue("SendUrl");
                 appConfig.Status = RegistryHelper.GetKeyValue("Status");
                 appConfig.AutoStart = RegistryHelper.GetKeyValue("AutoStart");
             }
@@ -47,7 +47,7 @@ namespace WebMonitorAlarm
             RegistryHelper.AddKey("Urls", appConfig.Urls);
             RegistryHelper.AddKey("TimeNum", appConfig.TimeNum);
             RegistryHelper.AddKey("TimeUnit", appConfig.TimeUnit);
-            RegistryHelper.AddKey("SendKey", appConfig.SendKey);
+            RegistryHelper.AddKey("SendUrl", appConfig.SendUrl);
             RegistryHelper.AddKey("Status", appConfig.Status);
             RegistryHelper.AddKey("AutoStart", appConfig.AutoStart);
 
